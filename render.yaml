@@ -1,0 +1,13 @@
+services:
+  - type: web
+    name: nba-copilot-api
+    runtime: python
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn app.api.main:app --host 0.0.0.0 --port $PORT
+    envVars:
+      - key: GROQ_API_KEY
+        sync: false
+      - key: SPORTRADAR_API_KEY
+        sync: false
+      - key: DATABASE_URL
+        sync: false
