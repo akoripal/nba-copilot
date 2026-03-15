@@ -6,4 +6,4 @@ __pycache__/
 mlruns/
 *.db
 node_modules/
-.next/
+.next/.env
