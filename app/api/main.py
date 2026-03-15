@@ -25,7 +25,6 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# ── Load model artifacts once at startup ──
 print("Loading model artifacts...")
 with open("app/ml/saved/model.pkl", "rb") as f:
     model = pickle.load(f)
@@ -35,7 +34,6 @@ with open("app/ml/saved/feature_cols.pkl", "rb") as f:
     feature_cols = pickle.load(f)
 print("Model loaded!")
 
-# ── Request/Response models ──
 class PredictionRequest(BaseModel):
     player_name: str
     opponent_team: str
@@ -64,7 +62,6 @@ class PlayerStatsResponse(BaseModel):
     worst_game: float
     consistency_score: float
 
-# ── Routes ──
 @app.get("/")
 def root():
     return {
@@ -72,6 +69,7 @@ def root():
         "version": "1.0.0",
         "endpoints": [
             "/predict",
+            "/players",
             "/player/{player_name}",
             "/health"
         ]
@@ -80,6 +78,32 @@ def root():
 @app.get("/health")
 def health():
     return {"status": "healthy", "model": "loaded"}
+
+@app.get("/players")
+def get_all_players():
+    try:
+        from app.models.database import SessionLocal, PlayerGame
+        db = SessionLocal()
+        records = db.query(PlayerGame.player_name, PlayerGame.game_id).all()
+        db.close()
+
+        # 2025-26 season game IDs start with nba_002250
+        current_season_players = set()
+        for name, game_id in records:
+            if game_id and game_id.startswith("nba_002250"):
+                current_season_players.add(name)
+
+        print(f"2025-26 players found: {len(current_season_players)}")
+
+        # Safety fallback
+        if len(current_season_players) < 10:
+            current_season_players = {r[0] for r in records}
+
+        players = sorted(list(current_season_players))
+        return {"players": players, "count": len(players)}
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
 @app.post("/predict", response_model=PredictionResponse)
 def predict(request: PredictionRequest):
@@ -160,4 +184,3 @@ def get_player_stats(player_name: str):
 
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
-        
