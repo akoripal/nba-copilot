@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect, useRef } from 'react'
 
 interface PredictionResult {
   player_name: string
@@ -14,6 +14,17 @@ interface PredictionResult {
   ai_analysis: string
 }
 
+const NBA_TEAMS = [
+  'Hawks', 'Celtics', 'Nets', 'Hornets', 'Bulls',
+  'Cavaliers', 'Mavericks', 'Nuggets', 'Pistons', 'Warriors',
+  'Rockets', 'Pacers', 'Clippers', 'Lakers', 'Grizzlies',
+  'Heat', 'Bucks', 'Timberwolves', 'Pelicans', 'Knicks',
+  'Thunder', 'Magic', '76ers', 'Suns', 'Trail Blazers',
+  'Kings', 'Spurs', 'Raptors', 'Jazz', 'Wizards'
+]
+
+const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'
+
 export default function Home() {
   const [playerName, setPlayerName] = useState('')
   const [opponent, setOpponent] = useState('')
@@ -21,10 +32,87 @@ export default function Home() {
   const [loading, setLoading] = useState(false)
   const [result, setResult] = useState<PredictionResult | null>(null)
   const [error, setError] = useState('')
+  const [allPlayers, setAllPlayers] = useState<string[]>([])
+  const [playerSuggestions, setPlayerSuggestions] = useState<string[]>([])
+  const [teamSuggestions, setTeamSuggestions] = useState<string[]>([])
+  const [showPlayerDropdown, setShowPlayerDropdown] = useState(false)
+  const [showTeamDropdown, setShowTeamDropdown] = useState(false)
+  const [validPlayer, setValidPlayer] = useState(false)
+  const [validTeam, setValidTeam] = useState(false)
+  const playerRef = useRef<HTMLDivElement>(null)
+  const teamRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    fetch(`${API_URL}/players`)
+      .then(r => r.json())
+      .then(data => setAllPlayers(data.players || []))
+      .catch(() => {})
+  }, [])
+
+  useEffect(() => {
+    const handleClick = (e: MouseEvent) => {
+      if (playerRef.current && !playerRef.current.contains(e.target as Node)) {
+        setShowPlayerDropdown(false)
+      }
+      if (teamRef.current && !teamRef.current.contains(e.target as Node)) {
+        setShowTeamDropdown(false)
+      }
+    }
+    document.addEventListener('mousedown', handleClick)
+    return () => document.removeEventListener('mousedown', handleClick)
+  }, [])
+
+  const handlePlayerInput = (val: string) => {
+    setPlayerName(val)
+    setValidPlayer(false)
+    setResult(null)
+    if (val.length >= 2) {
+      const matches = allPlayers.filter(p =>
+        p.toLowerCase().includes(val.toLowerCase())
+      ).slice(0, 8)
+      setPlayerSuggestions(matches)
+      setShowPlayerDropdown(matches.length > 0)
+    } else {
+      setShowPlayerDropdown(false)
+    }
+  }
+
+  const handleTeamInput = (val: string) => {
+    setOpponent(val)
+    setValidTeam(false)
+    setResult(null)
+    if (val.length >= 2) {
+      const matches = NBA_TEAMS.filter(t =>
+        t.toLowerCase().includes(val.toLowerCase())
+      )
+      setTeamSuggestions(matches)
+      setShowTeamDropdown(matches.length > 0)
+    } else {
+      setShowTeamDropdown(false)
+    }
+  }
+
+  const selectPlayer = (name: string) => {
+    setPlayerName(name)
+    setValidPlayer(true)
+    setShowPlayerDropdown(false)
+    setError('')
+  }
+
+  const selectTeam = (team: string) => {
+    setOpponent(team)
+    setValidTeam(true)
+    setShowTeamDropdown(false)
+    setError('')
+  }
 
   const handlePredict = async () => {
-    if (!playerName || !opponent) {
-      setError('Please enter both a player name and opponent team')
+    if (!validPlayer) {
+      setError('Please select a valid player from the dropdown')
+      return
+    }
+    if (!validTeam) {
+      setError('Please select a valid team from the dropdown')
       return
     }
 
@@ -33,7 +121,7 @@ export default function Home() {
     setResult(null)
 
     try {
-      const response = await fetch('http://localhost:8000/predict', {
+      const response = await fetch(`${API_URL}/predict`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -72,8 +160,6 @@ export default function Home() {
 
   return (
     <main className="min-h-screen bg-gray-950 text-white">
-
-      {/* Header */}
       <div className="border-b border-gray-800 px-6 py-4">
         <div className="max-w-4xl mx-auto flex items-center gap-3">
           <div className="w-8 h-8 bg-orange-500 rounded-lg flex items-center justify-center text-sm font-bold">
@@ -84,40 +170,81 @@ export default function Home() {
             <p className="text-xs text-gray-400">XGBoost + SHAP + Groq — Fantasy Performance Predictor</p>
           </div>
           <div className="ml-auto flex items-center gap-2">
-            <div className="w-2 h-2 bg-green-400 rounded-full animate-pulse"></div>
-            <span className="text-xs text-gray-400">API Live</span>
+            <div className={`w-2 h-2 rounded-full ${allPlayers.length > 0 ? 'bg-green-400 animate-pulse' : 'bg-yellow-400'}`}></div>
+            <span className="text-xs text-gray-400">{allPlayers.length > 0 ? `${allPlayers.length} players loaded` : 'Loading...'}</span>
           </div>
         </div>
       </div>
 
       <div className="max-w-4xl mx-auto px-6 py-8">
-
-        {/* Input Card */}
         <div className="bg-gray-900 border border-gray-800 rounded-xl p-6 mb-6">
           <h2 className="text-sm font-medium text-gray-400 uppercase tracking-wider mb-4">
             Generate Prediction
           </h2>
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
-            <div>
+            <div ref={playerRef} className="relative">
               <label className="text-xs text-gray-500 mb-1 block">Player Name</label>
-              <input
-                type="text"
-                value={playerName}
-                onChange={(e) => setPlayerName(e.target.value)}
-                placeholder="e.g. Scottie Barnes"
-                className="w-full bg-gray-800 border border-gray-700 rounded-lg px-4 py-3 text-sm text-white placeholder-gray-500 focus:outline-none focus:border-orange-500 transition-colors"
-              />
+              <div className="relative">
+                <input
+                  type="text"
+                  value={playerName}
+                  onChange={(e) => handlePlayerInput(e.target.value)}
+                  onFocus={() => playerName.length >= 2 && setShowPlayerDropdown(true)}
+                  placeholder="Search player..."
+                  className={`w-full bg-gray-800 border rounded-lg px-4 py-3 text-sm text-white placeholder-gray-500 focus:outline-none transition-colors ${
+                    validPlayer ? 'border-green-500' : 'border-gray-700 focus:border-orange-500'
+                  }`}
+                />
+                {validPlayer && (
+                  <span className="absolute right-3 top-3.5 text-green-400 text-xs">✓</span>
+                )}
+              </div>
+              {showPlayerDropdown && (
+                <div className="absolute z-10 w-full mt-1 bg-gray-800 border border-gray-700 rounded-lg shadow-xl overflow-hidden">
+                  {playerSuggestions.map((p) => (
+                    <button
+                      key={p}
+                      onClick={() => selectPlayer(p)}
+                      className="w-full text-left px-4 py-2.5 text-sm text-gray-200 hover:bg-gray-700 transition-colors border-b border-gray-700 last:border-0"
+                    >
+                      {p}
+                    </button>
+                  ))}
+                </div>
+              )}
             </div>
-            <div>
+
+            <div ref={teamRef} className="relative">
               <label className="text-xs text-gray-500 mb-1 block">Opponent Team</label>
-              <input
-                type="text"
-                value={opponent}
-                onChange={(e) => setOpponent(e.target.value)}
-                placeholder="e.g. Pistons"
-                className="w-full bg-gray-800 border border-gray-700 rounded-lg px-4 py-3 text-sm text-white placeholder-gray-500 focus:outline-none focus:border-orange-500 transition-colors"
-              />
+              <div className="relative">
+                <input
+                  type="text"
+                  value={opponent}
+                  onChange={(e) => handleTeamInput(e.target.value)}
+                  onFocus={() => opponent.length >= 2 && setShowTeamDropdown(true)}
+                  placeholder="Search team..."
+                  className={`w-full bg-gray-800 border rounded-lg px-4 py-3 text-sm text-white placeholder-gray-500 focus:outline-none transition-colors ${
+                    validTeam ? 'border-green-500' : 'border-gray-700 focus:border-orange-500'
+                  }`}
+                />
+                {validTeam && (
+                  <span className="absolute right-3 top-3.5 text-green-400 text-xs">✓</span>
+                )}
+              </div>
+              {showTeamDropdown && (
+                <div className="absolute z-10 w-full mt-1 bg-gray-800 border border-gray-700 rounded-lg shadow-xl overflow-hidden">
+                  {teamSuggestions.map((t) => (
+                    <button
+                      key={t}
+                      onClick={() => selectTeam(t)}
+                      className="w-full text-left px-4 py-2.5 text-sm text-gray-200 hover:bg-gray-700 transition-colors border-b border-gray-700 last:border-0"
+                    >
+                      {t}
+                    </button>
+                  ))}
+                </div>
+              )}
             </div>
           </div>
 
@@ -134,7 +261,7 @@ export default function Home() {
 
             <button
               onClick={handlePredict}
-              disabled={loading}
+              disabled={loading || !validPlayer || !validTeam}
               className="bg-orange-500 hover:bg-orange-600 disabled:bg-gray-700 disabled:text-gray-500 text-white font-medium px-6 py-3 rounded-lg text-sm transition-colors"
             >
               {loading ? 'Analyzing...' : 'Generate Prediction →'}
@@ -148,7 +275,6 @@ export default function Home() {
           )}
         </div>
 
-        {/* Loading State */}
         {loading && (
           <div className="bg-gray-900 border border-gray-800 rounded-xl p-8 text-center">
             <div className="w-8 h-8 border-2 border-orange-500 border-t-transparent rounded-full animate-spin mx-auto mb-3"></div>
@@ -156,11 +282,8 @@ export default function Home() {
           </div>
         )}
 
-        {/* Results */}
         {result && !loading && (
           <div className="space-y-4">
-
-            {/* Main prediction */}
             <div className="bg-gray-900 border border-gray-800 rounded-xl p-6">
               <div className="flex items-start justify-between mb-6">
                 <div>
@@ -177,7 +300,6 @@ export default function Home() {
                 </div>
               </div>
 
-              {/* Stats grid */}
               <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
                 <div className="bg-gray-800 rounded-lg p-3">
                   <div className="text-xs text-gray-500 mb-1">Roll5 Pts Avg</div>
@@ -205,7 +327,6 @@ export default function Home() {
               </div>
             </div>
 
-            {/* AI Analysis */}
             <div className="bg-gray-900 border border-gray-800 rounded-xl p-6">
               <div className="flex items-center gap-2 mb-4">
                 <div className="w-5 h-5 bg-purple-500/20 rounded flex items-center justify-center text-xs">✦</div>
@@ -215,7 +336,6 @@ export default function Home() {
               <p className="text-gray-200 leading-relaxed text-sm">{result.ai_analysis}</p>
             </div>
 
-            {/* Model info */}
             <div className="flex items-center gap-4 text-xs text-gray-600 px-1">
               <span>Model: XGBoost v2</span>
               <span>·</span>
@@ -225,19 +345,16 @@ export default function Home() {
               <span>·</span>
               <span>Within 10pts: 68%</span>
             </div>
-
           </div>
         )}
 
-        {/* Empty state */}
         {!result && !loading && (
           <div className="bg-gray-900 border border-dashed border-gray-800 rounded-xl p-12 text-center">
             <div className="text-4xl mb-3">🏀</div>
-            <p className="text-gray-500 text-sm">Enter a player and opponent to generate a prediction</p>
-            <p className="text-gray-600 text-xs mt-2">Try: Scottie Barnes vs Pistons</p>
+            <p className="text-gray-500 text-sm">Search for a player and select an opponent to generate a prediction</p>
+            <p className="text-gray-600 text-xs mt-2">Only 2025-26 season players are available</p>
           </div>
         )}
-
       </div>
     </main>
   )
