@@ -1,0 +1,69 @@
+name: Nightly Data Refresh
+
+on:
+  schedule:
+    - cron: '0 8 * * *'  # Runs at 2am EST (8am UTC) every night
+  workflow_dispatch:       # Allows manual trigger from GitHub UI
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: |
+          pip install nba_api pandas sqlalchemy psycopg2-binary python-dotenv requests
+
+      - name: Run data refresh
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: |
+          python -c "
+          import sys
+          sys.path.insert(0, '.')
+          from app.pipeline.nba_stats import load_player_games
+          import time
+
+          players = [
+              'LeBron James', 'Stephen Curry', 'Kevin Durant',
+              'Giannis Antetokounmpo', 'Jayson Tatum', 'Nikola Jokic',
+              'Anthony Davis', 'Joel Embiid', 'Damian Lillard',
+              'Devin Booker', 'Trae Young', 'Luka Doncic',
+              'Shai Gilgeous-Alexander', 'Anthony Edwards',
+              'Jaylen Brown', 'Ja Morant', 'Zion Williamson',
+              'Cade Cunningham', 'Victor Wembanyama',
+              'Tyrese Haliburton', 'Donovan Mitchell',
+              'Bam Adebayo', 'Jimmy Butler', 'Jalen Brunson',
+              'Karl-Anthony Towns', 'Scottie Barnes', 'Julius Randle',
+              'Rudy Gobert', 'Paolo Banchero', 'Franz Wagner'
+          ]
+
+          print(f'Refreshing {len(players)} players...')
+          for p in players:
+              load_player_games(p, season='2025-26', max_games=5)
+              time.sleep(1)
+          print('Refresh complete!')
+          "
+
+      - name: Retrain model
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: |
+          pip install xgboost shap scikit-learn mlflow
+          python app/ml/model.py
+
+      - name: Commit updated model
+        run: |
+          git config --local user.email "action@github.com"
+          git config --local user.name "GitHub Action"
+          git add -f app/ml/saved/
+          git diff --quiet && git diff --staged --quiet || git commit -m "nightly model refresh $(date +'%Y-%m-%d')"
+          git push
