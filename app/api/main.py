@@ -7,6 +7,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from typing import Optional
 import pickle
+import shap
 from dotenv import load_dotenv
 from pathlib import Path
 
@@ -28,10 +29,12 @@ app.add_middleware(
 print("Loading model artifacts...")
 with open("app/ml/saved/model.pkl", "rb") as f:
     model = pickle.load(f)
-with open("app/ml/saved/explainer.pkl", "rb") as f:
-    explainer = pickle.load(f)
 with open("app/ml/saved/feature_cols.pkl", "rb") as f:
     feature_cols = pickle.load(f)
+
+# Recreate explainer from model instead of loading pickle
+# This avoids numba/Python version compatibility issues
+explainer = shap.TreeExplainer(model)
 print("Model loaded!")
 
 class PredictionRequest(BaseModel):
@@ -87,7 +90,6 @@ def get_all_players():
         records = db.query(PlayerGame.player_name, PlayerGame.game_id).all()
         db.close()
 
-        # 2025-26 season game IDs start with nba_002250
         current_season_players = set()
         for name, game_id in records:
             if game_id and game_id.startswith("nba_002250"):
@@ -95,7 +97,6 @@ def get_all_players():
 
         print(f"2025-26 players found: {len(current_season_players)}")
 
-        # Safety fallback
         if len(current_season_players) < 10:
             current_season_players = {r[0] for r in records}
 
